@@ -1,0 +1,267 @@
+.settings-page {
+  min-height: 100vh;
+
+  background: #f5f6f4;
+  color: #17201d;
+}
+
+.settings-header {
+  width: min(680px, calc(100% - 36px));
+
+  margin: 0 auto;
+
+  padding: 80px 0 32px;
+}
+
+.settings-header span {
+  color: #7b8681;
+
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 1.6px;
+}
+
+.settings-header h1 {
+  margin: 8px 0 0;
+
+  font-size: 48px;
+
+  letter-spacing: -2.5px;
+}
+
+.settings-content {
+  width: min(680px, calc(100% - 36px));
+
+  margin: 0 auto;
+}
+
+.settings-profile {
+  padding: 17px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 14px;
+
+  border: 1px solid #e2e5e2;
+  border-radius: 23px;
+
+  background: white;
+}
+
+.settings-avatar {
+  width: 55px;
+  height: 55px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 18px;
+
+  background: #18201d;
+  color: white;
+
+  font-weight: 750;
+}
+
+.settings-profile > div:nth-child(2) {
+  flex: 1;
+}
+
+.settings-profile h2 {
+  margin: 0;
+
+  font-size: 16px;
+}
+
+.settings-profile p {
+  margin: 3px 0 0;
+
+  color: #8a928e;
+
+  font-size: 10px;
+}
+
+.settings-group {
+  margin-top: 28px;
+}
+
+.settings-group > h3 {
+  margin: 0 0 9px 7px;
+
+  color: #7c8681;
+
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.settings-card {
+  overflow: hidden;
+
+  border: 1px solid #e2e5e2;
+  border-radius: 23px;
+
+  background: white;
+}
+
+.setting-row {
+  min-height: 73px;
+
+  padding: 13px 16px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  border-bottom: 1px solid #eef0ee;
+}
+
+.setting-row:last-child {
+  border-bottom: 0;
+}
+
+.setting-icon {
+  width: 38px;
+  height: 38px;
+
+  flex-shrink: 0;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 13px;
+
+  background: #eff2ef;
+}
+
+.setting-text {
+  flex: 1;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 3px;
+}
+
+.setting-text strong {
+  font-size: 12px;
+}
+
+.setting-text span {
+  color: #909793;
+
+  font-size: 9px;
+}
+
+.setting-row select {
+  padding: 8px;
+
+  border: 0;
+  outline: 0;
+
+  background: transparent;
+
+  color: #68716d;
+
+  font-size: 11px;
+}
+
+.setting-choice-row {
+  padding: 12px;
+
+  display: grid;
+
+  grid-template-columns: repeat(3, 1fr);
+
+  gap: 7px;
+}
+
+.setting-choice {
+  height: 41px;
+
+  border: 0;
+  border-radius: 13px;
+
+  background: #eff1ef;
+  color: #737c77;
+
+  font-size: 10px;
+  font-weight: 650;
+
+  cursor: pointer;
+}
+
+.setting-choice.active {
+  background: #18201d;
+  color: white;
+}
+
+.settings-toggle {
+  position: relative;
+
+  width: 45px;
+  height: 27px;
+
+  padding: 0;
+
+  border: 0;
+  border-radius: 999px;
+
+  background: #d9ddda;
+
+  cursor: pointer;
+}
+
+.settings-toggle span {
+  position: absolute;
+
+  top: 3px;
+  left: 3px;
+
+  width: 21px;
+  height: 21px;
+
+  border-radius: 50%;
+
+  background: white;
+
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.16);
+
+  transition: transform 180ms ease;
+}
+
+.settings-toggle-on {
+  background: #18201d;
+}
+
+.settings-toggle-on span {
+  transform: translateX(18px);
+}
+
+.settings-about {
+  margin-top: 30px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  gap: 4px;
+
+  color: #929995;
+}
+
+.settings-about strong {
+  color: #68716d;
+
+  font-size: 11px;
+}
+
+.settings-about span {
+  font-size: 9px;
+}
+
+.settings-bottom-space {
+  height: 130px;
+}

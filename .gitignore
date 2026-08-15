@@ -1,0 +1,17 @@
+cat > .gitignore <<'EOF'
+# Secrets
+backend/.env
+frontend/.env.local
+
+# Python
+backend/.venv/
+backend/__pycache__/
+*.pyc
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# macOS
+.DS_Store
+EOF
