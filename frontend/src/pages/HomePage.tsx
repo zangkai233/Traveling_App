@@ -1,262 +1,690 @@
 import {
   ArrowRight,
-  Clock3,
+  Bell,
+  Heart,
   MapPin,
-  Navigation,
+  Search,
   Sparkles,
 } from "lucide-react";
 
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import {
+  useRef,
+  useState,
+} from "react";
+
+import {
+  useNavigate,
+} from "react-router-dom";
 
 import "./HomePage.css";
 
-const quickCities = [
-  "Toronto",
-  "Beijing",
-  "Shanghai",
-  "Chengdu",
+
+const interestOptions = [
+  "Food",
+  "Culture",
+  "Nature",
+  "Architecture",
+  "Shopping",
+  "Nightlife",
+  "Hidden gems",
 ];
 
+
+const chinaDestinations = [
+  {
+    city: "Beijing",
+    region: "China",
+    image:
+      "https://images.unsplash.com/photo-1508804185872-d7badad00f7d?auto=format&fit=crop&w=900&q=85",
+  },
+  {
+    city: "Guilin",
+    region: "Guangxi",
+    image:
+      "https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=900&q=85",
+  },
+  {
+    city: "Shanghai",
+    region: "China",
+    image:
+      "https://images.unsplash.com/photo-1548919973-5cef591cdbc9?auto=format&fit=crop&w=900&q=85",
+  },
+];
+
+
+const canadaDestinations = [
+  {
+    city: "Banff",
+    region: "Alberta",
+    image:
+      "https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=900&q=85",
+  },
+  {
+    city: "Toronto",
+    region: "Ontario",
+    image:
+      "https://images.unsplash.com/photo-1517090504586-fde19ea6066f?auto=format&fit=crop&w=900&q=85",
+  },
+  {
+    city: "Vancouver",
+    region: "British Columbia",
+    image:
+      "https://images.unsplash.com/photo-1559511260-66a654ae982a?auto=format&fit=crop&w=900&q=85",
+  },
+];
+
+
+const surpriseCities = [
+  "Toronto",
+  "Vancouver",
+  "Montreal",
+  "Quebec City",
+  "Banff",
+];
+
+
+const surpriseInterests = [
+  [
+    "Food",
+    "Culture",
+    "Hidden gems",
+  ],
+  [
+    "Nature",
+    "Architecture",
+  ],
+  [
+    "Food",
+    "Nightlife",
+  ],
+  [
+    "Culture",
+    "Architecture",
+  ],
+];
+
+
 function HomePage() {
-  const navigate = useNavigate();
+  const navigate =
+    useNavigate();
 
-  const [city, setCity] = useState("Toronto");
-  const [days, setDays] = useState(1);
+  const plannerRef =
+    useRef<HTMLDivElement | null>(
+      null,
+    );
 
-  function planTrip() {
-    if (!city.trim()) return;
 
-    const params = new URLSearchParams({
-      city: city.trim(),
-      days: String(days),
-      interests: "food, architecture, culture, local experiences",
-      pace: "balanced",
-    });
+  const [
+    city,
+    setCity,
+  ] = useState("Toronto");
 
-    navigate(`/map?${params.toString()}`);
+  const [
+    days,
+    setDays,
+  ] = useState(1);
+
+  const [
+    mustVisit,
+    setMustVisit,
+  ] = useState("");
+
+  const [
+    interests,
+    setInterests,
+  ] = useState<string[]>([
+    "Food",
+    "Culture",
+  ]);
+
+
+  function toggleInterest(
+    value: string,
+  ) {
+    setInterests(
+      (current) =>
+        current.includes(value)
+          ? current.filter(
+              (item) =>
+                item !== value,
+            )
+          : [
+              ...current,
+              value,
+            ],
+    );
   }
 
+
+  function openPlannerFor(
+    destination: string,
+  ) {
+    setCity(destination);
+
+    plannerRef.current
+      ?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+  }
+
+
+  function planTrip(
+    surprise = false,
+  ) {
+    let selectedCity =
+      city.trim();
+
+    let selectedInterests =
+      interests;
+
+
+    if (surprise) {
+      selectedCity =
+        surpriseCities[
+          Math.floor(
+            Math.random() *
+              surpriseCities.length,
+          )
+        ];
+
+      selectedInterests =
+        surpriseInterests[
+          Math.floor(
+            Math.random() *
+              surpriseInterests.length,
+          )
+        ];
+    }
+
+
+    if (!selectedCity) {
+      return;
+    }
+
+
+    const savedPace =
+      localStorage.getItem(
+        "easychina.pace",
+      ) || "balanced";
+
+
+    const params =
+      new URLSearchParams({
+        city:
+          selectedCity,
+
+        days:
+          String(days),
+
+        interests:
+          selectedInterests.join(
+            ", ",
+          ),
+
+        pace:
+          savedPace,
+
+        must_visit:
+          mustVisit.trim(),
+
+        surprise:
+          surprise
+            ? "1"
+            : "0",
+      });
+
+
+    navigate(
+      `/map?${params.toString()}`,
+    );
+  }
+
+
   return (
-    <div className="new-home">
-      <header className="new-home-header">
-        <div className="easychina-logo">
-          EasyChina
+    <div className="travel-home">
+
+      {/* HERO */}
+
+      <section className="home-hero">
+
+        <div className="hero-shade" />
+
+
+        <div className="hero-actions">
+
+          <button
+            className="hero-circle"
+            aria-label="Search"
+            onClick={() =>
+              plannerRef.current
+                ?.scrollIntoView({
+                  behavior: "smooth",
+                })
+            }
+          >
+            <Search size={23} />
+          </button>
+
+
+          <button
+            className="hero-circle"
+            aria-label="Notifications"
+          >
+            <Bell size={22} />
+          </button>
+
         </div>
 
-        <button className="profile-pill">
-          K
-        </button>
-      </header>
 
-      <main className="new-home-main">
-        <section className="hero-left">
-          <div className="home-ai-label">
-            <Sparkles size={14} />
-            AI TRAVEL
-          </div>
+        <div className="hero-copy">
 
-          <h1>Where to?</h1>
+          <span className="featured-label">
+            FEATURED DESTINATION
+          </span>
+
+
+          <h1>
+            Banff National
+            <br />
+            Park
+          </h1>
+
 
           <p>
-            One city. One tap.
-            <br />
-            We'll build the journey.
+            Turquoise lakes,
+            mountain air and
+            unforgettable trails.
           </p>
 
-          <div className="uber-search-card">
-            <div className="destination-input">
-              <MapPin size={21} />
 
-              <div>
-                <span>Destination</span>
+          <button
+            className="explore-hero-button"
+            onClick={() =>
+              openPlannerFor(
+                "Banff",
+              )
+            }
+          >
+            Explore now
 
-                <input
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      planTrip();
-                    }
-                  }}
-                  placeholder="Where are you going?"
+            <ArrowRight
+              size={20}
+            />
+          </button>
+
+        </div>
+
+
+        <div className="hero-pages">
+          <span className="active" />
+          <span />
+          <span />
+        </div>
+
+      </section>
+
+
+      {/* CONTENT */}
+
+      <main className="home-content">
+
+        {/* AI PLANNER */}
+
+        <section
+          className="quick-planner"
+          ref={plannerRef}
+        >
+
+          <div className="planner-title-row">
+
+            <div>
+              <span className="planner-kicker">
+                <Sparkles
+                  size={14}
                 />
-              </div>
+
+                AI TRIP PLANNER
+              </span>
+
+              <h2>
+                Where do you
+                want to go?
+              </h2>
             </div>
 
-            <div className="home-divider" />
+          </div>
 
-            <div className="trip-days-row">
-              <span>Trip length</span>
 
-              <div>
-                {[1, 2, 3].map((value) => (
+          <label className="destination-field">
+
+            <MapPin
+              size={20}
+            />
+
+            <div>
+              <span>
+                Destination
+              </span>
+
+              <input
+                value={city}
+                onChange={
+                  (event) =>
+                    setCity(
+                      event.target
+                        .value,
+                    )
+                }
+                placeholder="Toronto"
+              />
+            </div>
+
+          </label>
+
+
+          <div className="planner-grid">
+
+            <div className="planner-control">
+
+              <span>
+                Trip length
+              </span>
+
+              <div className="days-choice">
+
+                {[1, 2, 3].map(
+                  (value) => (
+                    <button
+                      key={value}
+                      className={
+                        days === value
+                          ? "active"
+                          : ""
+                      }
+                      onClick={() =>
+                        setDays(
+                          value,
+                        )
+                      }
+                    >
+                      {value} day
+                    </button>
+                  ),
+                )}
+
+              </div>
+
+            </div>
+
+
+            <div className="planner-control">
+
+              <span>
+                Must visit
+              </span>
+
+              <input
+                className="must-visit-input"
+                value={
+                  mustVisit
+                }
+                onChange={
+                  (event) =>
+                    setMustVisit(
+                      event.target
+                        .value,
+                    )
+                }
+                placeholder="CN Tower, AGO..."
+              />
+
+            </div>
+
+          </div>
+
+
+          <div className="interest-section">
+
+            <span>
+              What are you into?
+            </span>
+
+            <div className="interest-chips">
+
+              {interestOptions.map(
+                (item) => (
+
                   <button
-                    key={value}
+                    key={item}
                     className={
-                      days === value
-                        ? "trip-day trip-day-active"
-                        : "trip-day"
+                      interests.includes(
+                        item,
+                      )
+                        ? "selected"
+                        : ""
                     }
-                    onClick={() => setDays(value)}
+                    onClick={() =>
+                      toggleInterest(
+                        item,
+                      )
+                    }
                   >
-                    {value}D
+                    {item}
                   </button>
-                ))}
-              </div>
+
+                ),
+              )}
+
             </div>
+
+          </div>
+
+
+          <div className="planner-buttons">
 
             <button
-              className="home-plan-button"
-              onClick={planTrip}
+              className="primary-plan"
+              onClick={() =>
+                planTrip(false)
+              }
             >
               Plan with AI
 
-              <ArrowRight size={20} />
+              <ArrowRight
+                size={19}
+              />
             </button>
+
+
+            <button
+              className="surprise-plan"
+              onClick={() =>
+                planTrip(true)
+              }
+            >
+              <Sparkles
+                size={18}
+              />
+
+              Surprise me
+            </button>
+
           </div>
 
-          <div className="quick-destinations">
-            {quickCities.map((item) => (
-              <button
-                key={item}
-                onClick={() => setCity(item)}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
         </section>
 
-        <section className="home-trip-preview">
-          <div className="preview-map-grid" />
 
-          <div className="preview-top">
-            <div>
-              <small>YOUR NEXT JOURNEY</small>
-              <h2>Toronto</h2>
-            </div>
+        {/* CHINA */}
 
-            <span className="preview-ai">
-              <Sparkles size={13} />
-              AI
+        <DestinationSection
+          title="Explore China"
+          destinations={
+            chinaDestinations
+          }
+          onSelect={
+            openPlannerFor
+          }
+        />
+
+
+        {/* CANADA */}
+
+        <DestinationSection
+          title="Explore Canada"
+          destinations={
+            canadaDestinations
+          }
+          onSelect={
+            openPlannerFor
+          }
+        />
+
+
+        {/* RECOMMENDED */}
+
+        <section className="recommended-card">
+
+          <div>
+            <span>
+              RECOMMENDED FOR YOU
             </span>
+
+            <h2>
+              Toronto in one day.
+            </h2>
+
+            <p>
+              Markets, architecture,
+              waterfront views and
+              local neighbourhoods.
+            </p>
           </div>
 
-          <div className="preview-route">
-            <div className="fake-route route-a" />
-            <div className="fake-route route-b" />
-            <div className="fake-route route-c" />
 
-            <PreviewPoint
-              number={1}
-              className="p1"
-              label="CN Tower"
+          <button
+            onClick={() => {
+              setCity(
+                "Toronto",
+              );
+
+              setDays(1);
+
+              planTrip(false);
+            }}
+          >
+            Generate route
+
+            <ArrowRight
+              size={18}
             />
+          </button>
 
-            <PreviewPoint
-              number={2}
-              className="p2"
-              label="St. Lawrence"
-            />
-
-            <PreviewPoint
-              number={3}
-              className="p3"
-              label="Distillery"
-            />
-
-            <PreviewPoint
-              number={4}
-              className="p4"
-              label="Waterfront"
-            />
-          </div>
-
-          <div className="preview-info">
-            <div>
-              <Navigation size={17} />
-              <span>
-                <strong>5.8 km</strong>
-                Route
-              </span>
-            </div>
-
-            <div>
-              <Clock3 size={17} />
-              <span>
-                <strong>1 day</strong>
-                Adventure
-              </span>
-            </div>
-
-            <button onClick={planTrip}>
-              Open map
-              <ArrowRight size={16} />
-            </button>
-          </div>
         </section>
+
+
+        <div className="home-nav-spacer" />
+
       </main>
 
-      <section className="home-secondary">
-        <div>
-          <span className="home-section-label">
-            DISCOVER
-          </span>
-
-          <h2>Built around you.</h2>
-        </div>
-
-        <div className="home-feature-grid">
-          <article>
-            <Sparkles size={22} />
-            <h3>AI itinerary</h3>
-            <p>
-              A complete trip built around your interests
-              and pace.
-            </p>
-          </article>
-
-          <article>
-            <Navigation size={22} />
-            <h3>Smart routes</h3>
-            <p>
-              Stops arranged into practical routes instead
-              of random recommendations.
-            </p>
-          </article>
-
-          <article>
-            <MapPin size={22} />
-            <h3>Local guides</h3>
-            <p>
-              Discover people who can show you the city
-              beyond the obvious.
-            </p>
-          </article>
-        </div>
-      </section>
-
-      <div className="bottom-nav-space" />
     </div>
   );
 }
 
-function PreviewPoint({
-  number,
-  label,
-  className,
+
+function DestinationSection({
+  title,
+  destinations,
+  onSelect,
 }: {
-  number: number;
-  label: string;
-  className: string;
+  title: string;
+  destinations:
+    typeof canadaDestinations;
+  onSelect:
+    (city: string) => void;
 }) {
+
   return (
-    <div className={`preview-point ${className}`}>
-      <span>{number}</span>
-      <strong>{label}</strong>
-    </div>
+    <section className="destination-section">
+
+      <div className="section-row">
+
+        <h2>
+          {title}
+        </h2>
+
+        <button>
+          See all
+          <ArrowRight
+            size={15}
+          />
+        </button>
+
+      </div>
+
+
+      <div className="destination-scroll">
+
+        {destinations.map(
+          (destination) => (
+
+            <button
+              className="visual-destination-card"
+              key={
+                destination.city
+              }
+              onClick={() =>
+                onSelect(
+                  destination.city,
+                )
+              }
+            >
+
+              <img
+                src={
+                  destination.image
+                }
+                alt={
+                  destination.city
+                }
+              />
+
+
+              <div className="destination-shade" />
+
+
+              <Heart
+                className="destination-heart"
+                size={20}
+              />
+
+
+              <div className="destination-card-copy">
+
+                <strong>
+                  {
+                    destination.city
+                  }
+                </strong>
+
+                <span>
+                  {
+                    destination.region
+                  }
+                </span>
+
+              </div>
+
+            </button>
+
+          ),
+        )}
+
+      </div>
+
+    </section>
   );
 }
+
 
 export default HomePage;

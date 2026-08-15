@@ -3,59 +3,70 @@ import type {
   TripPlan,
 } from "../types/trip";
 
+
 function getApiBase() {
-  if (import.meta.env.VITE_API_BASE) {
-    return import.meta.env.VITE_API_BASE;
+  const custom =
+    import.meta.env.VITE_API_BASE;
+
+  if (custom) {
+    return custom;
   }
 
-  /*
-    Important:
-
-    Mac:
-    localhost:5173
-      ->
-    localhost:8000
-
-    iPhone:
-    192.168.x.x:5173
-      ->
-    192.168.x.x:8000
-  */
-
-  return `${window.location.protocol}//${window.location.hostname}:8000`;
+  return (
+    `${window.location.protocol}//` +
+    `${window.location.hostname}:8000`
+  );
 }
 
-const API_BASE = getApiBase();
+
+const API_BASE =
+  getApiBase();
+
 
 export async function generateTrip(
   request: PlanRequest,
+  signal?: AbortSignal,
 ): Promise<TripPlan> {
+
   const response = await fetch(
     `${API_BASE}/api/plan`,
     {
       method: "POST",
+
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type":
+          "application/json",
       },
-      body: JSON.stringify(request),
+
+      body:
+        JSON.stringify(request),
+
+      signal,
     },
   );
 
+
   if (!response.ok) {
-    let message = "Unable to generate trip.";
+    let message =
+      "Unable to generate trip.";
 
     try {
-      const error = await response.json();
+      const data =
+        await response.json();
 
-      if (error.detail) {
-        message = error.detail;
+      if (data.detail) {
+        message =
+          String(data.detail);
       }
     } catch {
-      // Ignore malformed error responses.
+      // Ignore malformed errors.
     }
 
-    throw new Error(message);
+    throw new Error(
+      message,
+    );
   }
+
 
   return response.json();
 }

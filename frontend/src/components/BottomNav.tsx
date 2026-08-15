@@ -5,9 +5,13 @@ import {
   Users,
 } from "lucide-react";
 
-import { useLocation, useNavigate } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 
 import "./BottomNav.css";
+
 
 const items = [
   {
@@ -32,37 +36,71 @@ const items = [
   },
 ];
 
+
 function BottomNav() {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const location =
+    useLocation();
+
+  const navigate =
+    useNavigate();
+
 
   return (
-    <nav className="bottom-nav">
-      {items.map((item) => {
-        const Icon = item.icon;
+    <nav className="easy-bottom-nav">
 
-        const active =
-          item.path === "/"
-            ? location.pathname === "/"
-            : location.pathname.startsWith(item.path);
+      {items.map(
+        (item) => {
 
-        return (
-          <button
-            key={item.path}
-            className={
-              active
-                ? "bottom-nav-item bottom-nav-item-active"
-                : "bottom-nav-item"
-            }
-            onClick={() => navigate(item.path)}
-          >
-            <Icon size={20} strokeWidth={active ? 2.4 : 1.9} />
-            <span>{item.label}</span>
-          </button>
-        );
-      })}
+          const Icon =
+            item.icon;
+
+          const active =
+            item.path === "/"
+              ? location.pathname === "/"
+              : location.pathname.startsWith(
+                  item.path,
+                ) ||
+                (
+                  item.path === "/map" &&
+                  location.pathname ===
+                    "/planner"
+                );
+
+
+          return (
+            <button
+              key={item.path}
+              className={
+                active
+                  ? "easy-nav-item easy-nav-active"
+                  : "easy-nav-item"
+              }
+              onClick={() =>
+                navigate(item.path)
+              }
+            >
+
+              <Icon
+                size={22}
+                strokeWidth={
+                  active
+                    ? 2.4
+                    : 1.8
+                }
+              />
+
+              <span>
+                {item.label}
+              </span>
+
+            </button>
+          );
+        },
+      )}
+
     </nav>
   );
 }
+
 
 export default BottomNav;

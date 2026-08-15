@@ -4,6 +4,10 @@ import {
   useState,
 } from "react";
 
+import type {
+  FormEvent,
+} from "react";
+
 import mapboxgl from "mapbox-gl";
 
 import type {
@@ -13,9 +17,13 @@ import type {
 
 import {
   ArrowLeft,
+  ChevronUp,
   Clock3,
+  LocateFixed,
   MapPin,
   Navigation,
+  Play,
+  Plus,
   RotateCcw,
   Sparkles,
 } from "lucide-react";
@@ -30,7 +38,9 @@ import {
 } from "../services/api";
 
 import type {
+  Coordinates,
   TripDay,
+  TripLanguage,
   TripPlan,
   TripStop,
 } from "../types/trip";
@@ -39,27 +49,6 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import "./PlannerMapPage.css";
 
 
-// =========================================================
-// Constants
-// =========================================================
-
-const TORONTO_CENTER: [number, number] = [
-  -79.3832,
-  43.6532,
-];
-
-const loadingMessages = [
-  "Understanding your trip",
-  "Choosing great places",
-  "Building a practical route",
-  "Polishing your itinerary",
-];
-
-
-// =========================================================
-// Types used only by this page
-// =========================================================
-
 type MarkerRecord = {
   stopId: string;
   marker: mapboxgl.Marker;
@@ -67,143 +56,371 @@ type MarkerRecord = {
 };
 
 
-// =========================================================
-// Page
-// =========================================================
+const loadingMessages = [
+  "Understanding your trip",
+  "Choosing memorable places",
+  "Organizing nearby stops",
+  "Building your route",
+];
+
+
+const mapCopy = {
+  English: {
+    aiTrip: "AI-OPTIMIZED ROUTE",
+    replay: "Recenter",
+    day: "Day",
+    days: "days",
+    stops: "stops",
+    addStop: "Add stop",
+    replan: "Replan",
+    placeholder: "e.g. Summer Palace",
+    include: "Include & rebuild",
+    cancel: "Cancel",
+    toNext: "to next",
+  },
+  "简体中文": {
+    aiTrip: "AI 优化路线",
+    replay: "重新居中",
+    day: "第",
+    days: "天",
+    stops: "个地点",
+    addStop: "添加地点",
+    replan: "重新规划",
+    placeholder: "例如：颐和园",
+    include: "加入并重建路线",
+    cancel: "取消",
+    toNext: "到下一站",
+  },
+  Français: {
+    aiTrip: "ITINÉRAIRE OPTIMISÉ PAR IA",
+    replay: "Recentrer",
+    day: "Jour",
+    days: "jours",
+    stops: "étapes",
+    addStop: "Ajouter une étape",
+    replan: "Replanifier",
+    placeholder: "p. ex. Palais d'Été",
+    include: "Ajouter et recalculer",
+    cancel: "Annuler",
+    toNext: "jusqu’à la suite",
+  },
+} as const;
+
 
 function PlannerMapPage() {
-  const navigate = useNavigate();
+  const navigate =
+    useNavigate();
 
-  const [searchParams] = useSearchParams();
+  const [
+    searchParams,
+    setSearchParams,
+  ] = useSearchParams();
+
 
   const mapContainerRef =
-    useRef<HTMLDivElement | null>(null);
+    useRef<HTMLDivElement | null>(
+      null,
+    );
 
   const mapRef =
-    useRef<mapboxgl.Map | null>(null);
+    useRef<mapboxgl.Map | null>(
+      null,
+    );
 
   const markersRef =
     useRef<MarkerRecord[]>([]);
 
-  const animationFrameRef =
-    useRef<number | null>(null);
+  const animationTimersRef =
+    useRef<number[]>([]);
+
+  const tripRequestRef =
+    useRef<AbortController | null>(
+      null,
+    );
 
 
-  // -------------------------------------------------------
-  // URL parameters
-  // -------------------------------------------------------
+  const requestedCity =
+    searchParams.get(
+      "city",
+    )?.trim();
 
   const city =
-    searchParams.get("city") ||
-    "Toronto";
+    requestedCity || "Beijing";
 
-  const days = Math.min(
-    Math.max(
-      Number(
-        searchParams.get("days") ||
-          "1",
+  const savedLanguage =
+    localStorage.getItem(
+      "easychina.language",
+    );
+
+  const language:
+    TripLanguage =
+    savedLanguage === "简体中文" ||
+    savedLanguage === "Français"
+      ? savedLanguage
+      : "English";
+
+  const copy =
+    mapCopy[language];
+
+  const units =
+    localStorage.getItem(
+      "easychina.units",
+    ) || "Metric";
+
+  const animationsEnabled =
+    localStorage.getItem(
+      "easychina.animations",
+    ) !== "false";
+
+  const mapboxToken =
+    import.meta.env
+      .VITE_MAPBOX_TOKEN;
+
+
+  const days =
+    Math.min(
+      Math.max(
+        Number(
+          searchParams.get(
+            "days",
+          ) || "1",
+        ),
+        1,
       ),
-      1,
-    ),
-    3,
-  );
+      3,
+    );
+
 
   const interests =
-    searchParams.get("interests") ||
-    "food, architecture, culture, local experiences";
-
-  const pace = (
-    searchParams.get("pace") ||
-    "balanced"
-  ) as
-    | "relaxed"
-    | "balanced"
-    | "fast";
+    searchParams.get(
+      "interests",
+    ) ||
+    "Food, Culture";
 
 
-  // -------------------------------------------------------
-  // State
-  // -------------------------------------------------------
+  const pace =
+    (
+      searchParams.get(
+        "pace",
+      ) ||
+      localStorage.getItem(
+        "easychina.pace",
+      ) ||
+      "balanced"
+    ) as
+      | "relaxed"
+      | "balanced"
+      | "fast";
+
+
+  const mustVisit =
+    (
+      searchParams.get(
+        "must_visit",
+      ) || ""
+    )
+      .split(",")
+      .map(
+        (value) =>
+          value.trim(),
+      )
+      .filter(Boolean);
+
+
+  const surprise =
+    searchParams.get(
+      "surprise",
+    ) === "1";
+
 
   const [
     mapReady,
     setMapReady,
-  ] = useState(false);
+  ] =
+    useState(false);
+
 
   const [
     trip,
     setTrip,
-  ] = useState<TripPlan | null>(
-    null,
-  );
+  ] =
+    useState<TripPlan | null>(
+      null,
+    );
+
 
   const [
     loading,
     setLoading,
-  ] = useState(true);
+  ] =
+    useState(
+      Boolean(mapboxToken),
+    );
+
 
   const [
     error,
     setError,
-  ] = useState<string | null>(
-    null,
-  );
+  ] =
+    useState<string | null>(
+      mapboxToken
+        ? null
+        : (
+            "VITE_MAPBOX_TOKEN "
+            + "is missing."
+          ),
+    );
+
 
   const [
     loadingPhase,
     setLoadingPhase,
-  ] = useState(0);
+  ] =
+    useState(0);
+
 
   const [
     activeDayIndex,
     setActiveDayIndex,
-  ] = useState(0);
+  ] =
+    useState(0);
+
 
   const [
     selectedStopId,
     setSelectedStopId,
-  ] = useState<string | null>(
-    null,
-  );
+  ] =
+    useState<string | null>(
+      null,
+    );
 
 
-  // =======================================================
-  // Cache
-  // =======================================================
+  const [
+    sheetExpanded,
+    setSheetExpanded,
+  ] =
+    useState(false);
 
-  const cacheKey = [
-    "easychina-trip",
-    city,
-    days,
-    interests,
-    pace,
-  ].join("|");
+  const [
+    addStopOpen,
+    setAddStopOpen,
+  ] = useState(false);
+
+  const [
+    newStopName,
+    setNewStopName,
+  ] = useState("");
 
 
-  // =======================================================
-  // Initialize Mapbox
-  // =======================================================
+  const cacheKey =
+    [
+      "easychina-trip-v4",
+      city,
+      days,
+      interests,
+      pace,
+      mustVisit.join(","),
+      surprise,
+      language,
+    ].join("|");
+
+
+  function removeMarkers() {
+    markersRef.current.forEach(
+      ({
+        marker,
+      }) =>
+        marker.remove(),
+    );
+
+    markersRef.current = [];
+  }
+
+
+  function clearAnimationTimers() {
+    animationTimersRef.current.forEach(
+      (timer) =>
+        window.clearTimeout(
+          timer,
+        ),
+    );
+
+    animationTimersRef.current = [];
+  }
+
+
+  function clearMapVisualization(
+    map: mapboxgl.Map,
+  ) {
+    clearAnimationTimers();
+    removeMarkers();
+
+    if (
+      map.getLayer(
+        "easychina-route-line",
+      )
+    ) {
+      map.removeLayer(
+        "easychina-route-line",
+      );
+    }
+
+    if (
+      map.getLayer(
+        "easychina-route-halo",
+      )
+    ) {
+      map.removeLayer(
+        "easychina-route-halo",
+      );
+    }
+
+    if (
+      map.getLayer(
+        "easychina-route-shadow",
+      )
+    ) {
+      map.removeLayer(
+        "easychina-route-shadow",
+      );
+    }
+
+    if (
+      map.getSource(
+        "easychina-route",
+      )
+    ) {
+      map.removeSource(
+        "easychina-route",
+      );
+    }
+  }
+
+
+  /* ======================================================
+     MAP
+     ====================================================== */
 
   useEffect(() => {
     const token =
-      import.meta.env
-        .VITE_MAPBOX_TOKEN;
+      mapboxToken;
+
 
     if (!token) {
-      setError(
-        "VITE_MAPBOX_TOKEN is missing.",
-      );
-
-      setLoading(false);
-
       return;
     }
 
-    if (!mapContainerRef.current) {
+
+    if (
+      !mapContainerRef.current
+    ) {
       return;
     }
 
-    mapboxgl.accessToken = token;
+
+    mapboxgl.accessToken =
+      token;
+
 
     const map =
       new mapboxgl.Map({
@@ -211,98 +428,116 @@ function PlannerMapPage() {
           mapContainerRef.current,
 
         style:
-          "mapbox://styles/mapbox/streets-v12",
+          "mapbox://styles/mapbox/standard",
 
-        center:
-          TORONTO_CENTER,
+        center: [0, 25],
 
-        zoom: 11.2,
+        zoom: 1.5,
 
-        pitch: 32,
+        pitch: 0,
 
-        bearing: -6,
+        bearing: 0,
 
         antialias: true,
       });
 
-    map.addControl(
-      new mapboxgl.NavigationControl({
-        showZoom: true,
-        showCompass: true,
-      }),
-      "top-right",
+
+    map.on(
+      "load",
+      () => {
+        setMapReady(
+          true,
+        );
+      },
     );
 
-    map.on("load", () => {
-      setMapReady(true);
-    });
 
     map.on(
       "error",
       (event) => {
         console.error(
-          "Mapbox error:",
+          "Mapbox:",
           event.error,
         );
       },
     );
 
-    mapRef.current = map;
+
+    mapRef.current =
+      map;
 
 
     return () => {
-      if (
-        animationFrameRef.current !==
-        null
-      ) {
-        cancelAnimationFrame(
-          animationFrameRef.current,
-        );
-      }
+      tripRequestRef.current
+        ?.abort();
+
+      clearAnimationTimers();
 
       removeMarkers();
 
       map.remove();
 
-      mapRef.current = null;
+      mapRef.current =
+        null;
     };
-  }, []);
+  }, [mapboxToken]);
 
 
-  // =======================================================
-  // Load AI itinerary
-  // =======================================================
-
-  useEffect(() => {
-    loadTrip();
-    // Intentionally run from URL parameters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    city,
-    days,
-    interests,
-    pace,
-  ]);
-
+  /* ======================================================
+     LOAD TRIP
+     ====================================================== */
 
   async function loadTrip(
     force = false,
   ) {
+    tripRequestRef.current
+      ?.abort();
+
+    const controller =
+      new AbortController();
+
+    tripRequestRef.current =
+      controller;
+
     setLoading(true);
+
     setError(null);
+
+    setTrip(null);
+
     setLoadingPhase(0);
+
     setActiveDayIndex(0);
 
-    try {
-      // -----------------------------------------------
-      // Check local cache first
-      // -----------------------------------------------
+    setSheetExpanded(false);
 
+    setAddStopOpen(false);
+
+    if (
+      mapRef.current
+    ) {
+      if (
+        mapRef.current
+          .isStyleLoaded()
+      ) {
+        clearMapVisualization(
+          mapRef.current,
+        );
+      } else {
+        clearAnimationTimers();
+
+        removeMarkers();
+      }
+    }
+
+
+    try {
       if (!force) {
         const cached =
           sessionStorage.getItem(
             cacheKey,
           );
+
 
         if (cached) {
           const parsed =
@@ -310,28 +545,33 @@ function PlannerMapPage() {
               cached,
             ) as TripPlan;
 
-          setTrip(parsed);
 
-          const firstStop =
+          setTrip(
+            parsed,
+          );
+
+
+          const first =
             parsed.days[0]
               ?.stops[0];
 
-          if (firstStop) {
+
+          if (first) {
             setSelectedStopId(
-              firstStop.id,
+              first.id,
             );
           }
 
+
           setLoading(false);
+
+          tripRequestRef.current =
+            null;
 
           return;
         }
       }
 
-
-      // -----------------------------------------------
-      // Call FastAPI
-      // -----------------------------------------------
 
       const result =
         await generateTrip({
@@ -339,9 +579,25 @@ function PlannerMapPage() {
           days,
           interests,
           pace,
-        });
+          must_visit:
+            mustVisit,
+          surprise_me:
+            surprise,
+          language,
+        }, controller.signal);
 
-      setTrip(result);
+
+      if (
+        controller.signal.aborted
+      ) {
+        return;
+      }
+
+
+      setTrip(
+        result,
+      );
+
 
       sessionStorage.setItem(
         cacheKey,
@@ -350,41 +606,88 @@ function PlannerMapPage() {
         ),
       );
 
-      const firstStop =
+
+      const first =
         result.days[0]
           ?.stops[0];
 
-      if (firstStop) {
+
+      if (first) {
         setSelectedStopId(
-          firstStop.id,
+          first.id,
         );
       }
+
     } catch (err) {
-      console.error(err);
+
+      if (
+        controller.signal.aborted
+      ) {
+        return;
+      }
 
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to generate itinerary.",
+          : (
+              "Unable to "
+              + "generate trip."
+            ),
       );
+
     } finally {
-      setLoading(false);
+
+      if (
+        tripRequestRef.current ===
+        controller
+      ) {
+        setLoading(false);
+
+        tripRequestRef.current =
+          null;
+      }
+
     }
   }
 
 
-  // =======================================================
-  // Loading text animation
-  // =======================================================
+  useEffect(() => {
+    if (!mapboxToken) {
+      return;
+    }
+
+    const timer =
+      window.setTimeout(
+        () => {
+          void loadTrip();
+        },
+        0,
+      );
+
+    return () =>
+      window.clearTimeout(
+        timer,
+      );
+
+    // URL controls the plan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey, mapboxToken]);
+
+
+  /* ======================================================
+     LOADING MESSAGES
+     ====================================================== */
 
   useEffect(() => {
     if (!loading) {
       return;
     }
 
+
     const timer =
       window.setInterval(
         () => {
+
           setLoadingPhase(
             (current) =>
               Math.min(
@@ -393,53 +696,23 @@ function PlannerMapPage() {
                   1,
               ),
           );
+
         },
-        1400,
+        1350,
       );
+
 
     return () =>
       window.clearInterval(
         timer,
       );
+
   }, [loading]);
 
 
-  // =======================================================
-  // Draw selected day
-  // =======================================================
-
-  useEffect(() => {
-    if (
-      !mapReady ||
-      !trip ||
-      !mapRef.current
-    ) {
-      return;
-    }
-
-    const day =
-      trip.days[
-        activeDayIndex
-      ];
-
-    if (!day) {
-      return;
-    }
-
-    drawDay(
-      mapRef.current,
-      day,
-    );
-  }, [
-    mapReady,
-    trip,
-    activeDayIndex,
-  ]);
-
-
-  // =======================================================
-  // Update selected marker styling
-  // =======================================================
+  /* ======================================================
+     ACTIVE MARKER
+     ====================================================== */
 
   useEffect(() => {
     markersRef.current.forEach(
@@ -447,292 +720,343 @@ function PlannerMapPage() {
         stopId,
         element,
       }) => {
+
         element.classList.toggle(
-          "easychina-map-marker-active",
+          "route-marker-selected",
           stopId ===
             selectedStopId,
         );
+
       },
     );
+
   }, [selectedStopId]);
 
 
-  // =======================================================
-  // Draw day
-  // =======================================================
+  /* ======================================================
+     POINT-BY-POINT VISUALIZATION
+     ====================================================== */
 
-  function drawDay(
+  function visualizeDay(
     map: mapboxgl.Map,
     day: TripDay,
   ) {
-    clearExistingMapContent(
+    clearMapVisualization(
       map,
     );
 
-    const stops = day.stops;
 
-    if (!stops.length) {
+    if (
+      !day.stops.length
+    ) {
       return;
     }
 
 
-    // -----------------------------------------------------
-    // Markers
-    // -----------------------------------------------------
+    fitDayOnMap(
+      map,
+      day,
+      false,
+    );
 
-    stops.forEach(
-      (stop, index) => {
-        const marker =
-          createStopMarker(
+
+    /* Create all markers hidden */
+
+    day.stops.forEach(
+      (
+        stop,
+        index,
+      ) => {
+
+        const record =
+          createMarker(
             stop,
             index,
             map,
           );
 
+
         markersRef.current.push(
-          marker,
+          record,
         );
+
       },
     );
 
 
-    // -----------------------------------------------------
-    // Fit map to all stops
-    // -----------------------------------------------------
-
-    const bounds =
-      new mapboxgl.LngLatBounds();
-
-    stops.forEach((stop) => {
-      bounds.extend(
-        stop.coordinates,
-      );
-    });
-
-    map.fitBounds(bounds, {
-      padding: {
-        top: 125,
-
-        right: 90,
-
-        bottom:
-          window.innerWidth <= 850
-            ? 390
-            : 120,
-
-        left:
-          window.innerWidth > 850
-            ? 430
-            : 70,
-      },
-
-      maxZoom: 14,
-
-      duration: 1100,
-
-      essential: true,
-    });
-
-
-    // -----------------------------------------------------
-    // Route
-    // -----------------------------------------------------
-
-    const routeCoordinates =
+    const geometry =
       day.route?.geometry;
 
     if (
-      !routeCoordinates ||
-      routeCoordinates.length < 2
+      geometry &&
+      geometry.length >= 2
     ) {
-      return;
+      drawRoute(
+        map,
+        geometry,
+      );
     }
 
-    drawAnimatedRoute(
-      map,
-      routeCoordinates,
+
+    /* Reveal markers after the camera is stable. */
+
+    const markerDelay =
+      animationsEnabled
+        ? 110
+        : 0;
+
+
+    markersRef.current.forEach(
+      (
+        record,
+        index,
+      ) => {
+
+        if (!animationsEnabled) {
+          record.element
+            .classList.add(
+              "route-marker-visible",
+            );
+
+          return;
+        }
+
+        const timer =
+          window.setTimeout(
+            () => {
+
+              record.element
+                .classList.add(
+                  "route-marker-visible",
+                );
+
+            },
+            90 +
+              index *
+                markerDelay,
+          );
+
+
+        animationTimersRef
+          .current
+          .push(timer);
+
+      },
     );
+
+
   }
 
 
-  // =======================================================
-  // Marker
-  // =======================================================
+  /* ======================================================
+     MARKERS
+     ====================================================== */
 
-  function createStopMarker(
+  function createMarker(
     stop: TripStop,
     index: number,
     map: mapboxgl.Map,
   ): MarkerRecord {
+
     const element =
       document.createElement(
         "div",
       );
 
-    element.className =
-      "easychina-map-marker";
 
-    element.style.animationDelay =
-      `${index * 80}ms`;
+    element.className =
+      "route-marker";
+
 
     element.innerHTML = `
-      <div class="marker-dot">
-        ${index + 1}
-      </div>
+      <div class="route-marker-visual">
+        <div class="route-marker-dot">
+          ${index + 1}
+        </div>
 
-      <div class="marker-label">
-        ${escapeHtml(stop.name)}
+        <div class="route-marker-name">
+          ${escapeHtml(
+            stop.name,
+          )}
+        </div>
       </div>
     `;
 
 
-    // -----------------------------------------------------
-    // Popup
-    // -----------------------------------------------------
-
-    const popup =
-      new mapboxgl.Popup({
-        offset: 31,
-
-        closeButton: false,
-
-        closeOnClick: true,
-
-        className:
-          "easychina-popup",
-      }).setHTML(`
-        <div class="popup-content">
-
-          <span class="popup-stop-number">
-            STOP ${index + 1}
-          </span>
-
-          <strong>
-            ${escapeHtml(
-              stop.name,
-            )}
-          </strong>
-
-          <p>
-            ${escapeHtml(
-              stop.reason,
-            )}
-          </p>
-
-          <div class="popup-meta">
-            ${escapeHtml(
-              stop.time,
-            )}
-            ·
-            ${stop.duration_minutes}
-            min
-          </div>
-
-        </div>
-      `);
-
-
-    // -----------------------------------------------------
-    // Marker click
-    // -----------------------------------------------------
-
     element.addEventListener(
       "click",
       () => {
-        selectStop(stop);
+
+        selectStop(
+          stop,
+        );
+
       },
     );
 
 
-    // -----------------------------------------------------
-    // Create actual Mapbox marker
-    // -----------------------------------------------------
-
     const marker =
       new mapboxgl.Marker({
         element,
-
         anchor: "center",
       })
         .setLngLat(
           stop.coordinates,
-        )
-        .setPopup(popup)
-        .addTo(map);
+        );
+
+
+    /*
+      Desktop can use popup.
+      Mobile uses bottom sheet only.
+    */
+
+    if (
+      window.innerWidth >
+      850
+    ) {
+
+      const popup =
+        new mapboxgl.Popup({
+          offset: 28,
+          closeButton:
+            false,
+          className:
+            "desktop-stop-popup",
+        }).setHTML(`
+          <div class="desktop-popup-inner">
+
+            <span>
+              STOP ${index + 1}
+            </span>
+
+            <strong>
+              ${escapeHtml(
+                stop.name,
+              )}
+            </strong>
+
+            <p>
+              ${escapeHtml(
+                stop.reason,
+              )}
+            </p>
+
+          </div>
+        `);
+
+
+      marker.setPopup(
+        popup,
+      );
+    }
+
+
+    marker.addTo(
+      map,
+    );
 
 
     return {
-      stopId: stop.id,
+      stopId:
+        stop.id,
+
       marker,
+
       element,
     };
   }
 
 
-  // =======================================================
-  // Route
-  // =======================================================
+  /* ======================================================
+     ROUTE
+     ====================================================== */
 
-  function drawAnimatedRoute(
+  function drawRoute(
     map: mapboxgl.Map,
-    coordinates:
-      [number, number][],
+    coordinates: Coordinates[],
   ) {
-    const sampled =
-      sampleRoute(
-        coordinates,
-        420,
-      );
 
-    if (sampled.length < 2) {
+    if (
+      coordinates.length < 2
+    ) {
       return;
     }
 
 
-    // -----------------------------------------------------
-    // Begin route with two identical points
-    // -----------------------------------------------------
-
-    const initialFeature:
+    const routeFeature:
       Feature<LineString> = {
+
       type: "Feature",
 
       properties: {},
 
       geometry: {
-        type: "LineString",
+        type:
+          "LineString",
 
-        coordinates: [
-          sampled[0],
-          sampled[0],
-        ],
+        coordinates,
       },
     };
 
-
-    // -----------------------------------------------------
-    // Source
-    // -----------------------------------------------------
 
     map.addSource(
       "easychina-route",
       {
         type: "geojson",
-
-        data: initialFeature,
+        data:
+          routeFeature,
+        lineMetrics: true,
       },
     );
 
 
-    // -----------------------------------------------------
-    // Big white border
-    // -----------------------------------------------------
+    /* Soft shadow under a restrained route casing. */
 
     map.addLayer({
       id:
         "easychina-route-shadow",
 
-      type: "line",
+      type:
+        "line",
+
+      source:
+        "easychina-route",
+
+      layout: {
+        "line-cap":
+          "round",
+
+        "line-join":
+          "round",
+      },
+
+      paint: {
+        "line-color":
+          "#17335f",
+
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          10,
+          8,
+          15,
+          14,
+        ],
+
+        "line-opacity":
+          0.18,
+
+        "line-blur": 5,
+      },
+    });
+
+    map.addLayer({
+      id:
+        "easychina-route-halo",
+
+      type:
+        "line",
 
       source:
         "easychina-route",
@@ -749,26 +1073,30 @@ function PlannerMapPage() {
         "line-color":
           "#ffffff",
 
-        "line-width": 12,
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          10,
+          5,
+          15,
+          8.5,
+        ],
 
         "line-opacity":
-          0.95,
-
-        "line-blur":
-          0.8,
+          0.88,
       },
     });
 
 
-    // -----------------------------------------------------
-    // Main green route
-    // -----------------------------------------------------
+    /* Main route */
 
     map.addLayer({
       id:
-        "easychina-route",
+        "easychina-route-line",
 
-      type: "line",
+      type:
+        "line",
 
       source:
         "easychina-route",
@@ -782,277 +1110,280 @@ function PlannerMapPage() {
       },
 
       paint: {
-        "line-color":
-          "#18A567",
+        "line-gradient": [
+          "interpolate",
+          ["linear"],
+          ["line-progress"],
+          0,
+          "#173b78",
+          0.52,
+          "#2864c7",
+          1,
+          "#167c83",
+        ],
 
-        "line-width": 6,
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          10,
+          2.75,
+          15,
+          4.75,
+        ],
 
         "line-opacity":
-          0.98,
+          1,
       },
     });
+  }
 
 
-    // -----------------------------------------------------
-    // Animate
-    // -----------------------------------------------------
+  /* ======================================================
+     MAP CONTROLS
+     ====================================================== */
 
-    animateRoute(
-      map,
-      sampled,
+  function fitDayOnMap(
+    map: mapboxgl.Map,
+    day: TripDay,
+    animated = true,
+  ) {
+
+    const bounds =
+      new mapboxgl.LngLatBounds();
+
+
+    day.stops.forEach(
+      (stop) =>
+        bounds.extend(
+          stop.coordinates,
+        ),
+    );
+
+
+    const mobile =
+      window.innerWidth <=
+      850;
+
+
+    map.fitBounds(
+      bounds,
+      {
+        padding:
+          mobile
+            ? {
+                top: 110,
+                right: 45,
+                bottom: 320,
+                left: 45,
+              }
+            : {
+                top: 110,
+                right: 90,
+                bottom: 100,
+                left: 470,
+              },
+
+        maxZoom: 14,
+
+        duration:
+          animated &&
+          animationsEnabled
+            ? 650
+            : 0,
+
+        essential: false,
+      },
     );
   }
 
 
-  function animateRoute(
-    map: mapboxgl.Map,
-    coordinates:
-      [number, number][],
-  ) {
-    const rawSource =
-      map.getSource(
-        "easychina-route",
-      );
-
-    if (!rawSource) {
+  function recenter() {
+    if (
+      !mapRef.current ||
+      !activeDay
+    ) {
       return;
     }
 
-    const source =
-      rawSource as
-        mapboxgl.GeoJSONSource;
 
-    const start =
-      performance.now();
-
-    const duration = 1250;
-
-
-    function frame(
-      now: number,
-    ) {
-      const progress =
-        Math.min(
-          (now - start) /
-            duration,
-          1,
-        );
-
-
-      // Smooth ease-out
-      const eased =
-        1 -
-        Math.pow(
-          1 - progress,
-          3,
-        );
-
-
-      const endIndex =
-        Math.max(
-          2,
-
-          Math.floor(
-            eased *
-              coordinates.length,
-          ),
-        );
-
-
-      const visible =
-        coordinates.slice(
-          0,
-          endIndex,
-        );
-
-
-      const feature:
-        Feature<LineString> = {
-        type: "Feature",
-
-        properties: {},
-
-        geometry: {
-          type:
-            "LineString",
-
-          coordinates:
-            visible,
-        },
-      };
-
-
-      source.setData(
-        feature,
-      );
-
-
-      if (progress < 1) {
-        animationFrameRef.current =
-          requestAnimationFrame(
-            frame,
-          );
-      } else {
-        animationFrameRef.current =
-          null;
-      }
-    }
-
-
-    animationFrameRef.current =
-      requestAnimationFrame(
-        frame,
-      );
-  }
-
-
-  // =======================================================
-  // Remove old route + markers
-  // =======================================================
-
-  function clearExistingMapContent(
-    map: mapboxgl.Map,
-  ) {
-    if (
-      animationFrameRef.current !==
-      null
-    ) {
-      cancelAnimationFrame(
-        animationFrameRef.current,
-      );
-
-      animationFrameRef.current =
-        null;
-    }
-
-
-    removeMarkers();
-
-
-    if (
-      map.getLayer(
-        "easychina-route",
-      )
-    ) {
-      map.removeLayer(
-        "easychina-route",
-      );
-    }
-
-
-    if (
-      map.getLayer(
-        "easychina-route-shadow",
-      )
-    ) {
-      map.removeLayer(
-        "easychina-route-shadow",
-      );
-    }
-
-
-    if (
-      map.getSource(
-        "easychina-route",
-      )
-    ) {
-      map.removeSource(
-        "easychina-route",
-      );
-    }
-  }
-
-
-  function removeMarkers() {
-    markersRef.current.forEach(
-      ({ marker }) => {
-        marker.remove();
-      },
+    fitDayOnMap(
+      mapRef.current,
+      activeDay,
     );
-
-    markersRef.current = [];
   }
 
-
-  // =======================================================
-  // Stop selection
-  // =======================================================
 
   function selectStop(
     stop: TripStop,
   ) {
+
     setSelectedStopId(
       stop.id,
     );
 
-    const map =
-      mapRef.current;
 
-    if (!map) {
-      return;
-    }
-
-    map.flyTo({
+    mapRef.current?.flyTo({
       center:
         stop.coordinates,
 
-      zoom: 15.4,
+      zoom: 15,
 
-      pitch: 48,
+      duration:
+        animationsEnabled
+          ? 480
+          : 0,
 
-      bearing: -5,
-
-      duration: 850,
-
-      essential: true,
+      essential: false,
     });
+
+
+    window.setTimeout(
+      () => {
+
+        document
+          .getElementById(
+            `trip-stop-${stop.id}`,
+          )
+          ?.scrollIntoView({
+            behavior: "smooth",
+            block: "nearest",
+          });
+
+      },
+      180,
+    );
   }
 
 
-  // =======================================================
-  // Day switching
-  // =======================================================
+  function replayRoute() {
+    if (
+      !mapRef.current ||
+      !activeDay
+    ) {
+      return;
+    }
+
+
+    visualizeDay(
+      mapRef.current,
+      activeDay,
+    );
+  }
+
 
   function switchDay(
     index: number,
   ) {
+
     setActiveDayIndex(
       index,
     );
 
-    const firstStop =
+
+    const first =
       trip?.days[index]
         ?.stops[0];
 
-    if (firstStop) {
+
+    if (first) {
       setSelectedStopId(
-        firstStop.id,
+        first.id,
       );
     }
+
+
+    setSheetExpanded(
+      false,
+    );
   }
 
 
-  // =======================================================
-  // New plan
-  // =======================================================
+  function addStop(
+    event:
+      FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
 
-  function newTrip() {
-    navigate("/");
-  }
+    const stopName =
+      newStopName.trim();
 
+    if (!stopName) {
+      return;
+    }
 
-  function regenerateTrip() {
-    sessionStorage.removeItem(
-      cacheKey,
+    const nextMustVisit = [
+      ...mustVisit,
+      stopName,
+    ].filter(
+      (value, index, values) =>
+        values.findIndex(
+          (candidate) =>
+            candidate.toLocaleLowerCase()
+            === value.toLocaleLowerCase(),
+        ) === index,
     );
 
-    loadTrip(true);
+    const nextParams =
+      new URLSearchParams(
+        searchParams,
+      );
+
+    nextParams.set(
+      "must_visit",
+      nextMustVisit.join(","),
+    );
+
+    setNewStopName("");
+    setAddStopOpen(false);
+    setSearchParams(
+      nextParams,
+      {
+        replace: true,
+      },
+    );
   }
 
 
-  // =======================================================
-  // Helpers
-  // =======================================================
+  /* ======================================================
+     DRAW DAY
+     ====================================================== */
+
+  useEffect(() => {
+    if (
+      !mapReady ||
+      !trip ||
+      !mapRef.current
+    ) {
+      return;
+    }
+
+    const activeTripDay =
+      trip.days[
+        activeDayIndex
+      ];
+
+    if (!activeTripDay) {
+      return;
+    }
+
+    visualizeDay(
+      mapRef.current,
+      activeTripDay,
+    );
+
+    // Mapbox drawing functions are intentionally imperative.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    mapReady,
+    trip,
+    activeDayIndex,
+  ]);
+
+
+  /* ======================================================
+     VALUES
+     ====================================================== */
 
   const activeDay =
     trip?.days[
@@ -1062,15 +1393,15 @@ function PlannerMapPage() {
 
   const distanceText =
     activeDay?.route
-      ? `${(
+      ? formatDistance(
           activeDay.route
-            .distance_meters /
-          1000
-        ).toFixed(1)} km`
+            .distance_meters,
+          units,
+        )
       : "—";
 
 
-  const durationText =
+  const walkTimeText =
     activeDay?.route
       ? formatDuration(
           activeDay.route
@@ -1079,100 +1410,79 @@ function PlannerMapPage() {
       : "—";
 
 
-  // =======================================================
-  // UI
-  // =======================================================
+  /* ======================================================
+     UI
+     ====================================================== */
 
   return (
-    <div className="planner-page">
+    <div
+      className={
+        animationsEnabled
+          ? "visual-map-page"
+          : "visual-map-page motion-off"
+      }
+    >
 
-      {/* =============================================== */}
       {/* MAP */}
-      {/* =============================================== */}
 
       <div
         ref={
           mapContainerRef
         }
-        className="planner-map"
+        className="visual-map"
       />
 
 
-      {/* =============================================== */}
-      {/* TOP NAV */}
-      {/* =============================================== */}
+      {/* FLOATING TOP */}
 
-      <header className="planner-nav">
-
-        <button
-          className="nav-icon-button"
-          onClick={() =>
-            navigate("/")
-          }
-          aria-label="Back"
-        >
-          <ArrowLeft
-            size={19}
-          />
-        </button>
+      <button
+        className="map-round-button map-back"
+        onClick={() =>
+          navigate("/")
+        }
+      >
+        <ArrowLeft
+          size={24}
+        />
+      </button>
 
 
-        <div className="planner-nav-title">
-
-          <strong>
-            {trip?.city ||
-              city}
-          </strong>
-
-          <span>
-            AI itinerary
-          </span>
-
-        </div>
+      <div className="map-city-name">
+        {trip?.city || city}
+      </div>
 
 
-        <button
-          className="new-plan-button"
-          onClick={newTrip}
-        >
-          <RotateCcw
-            size={15}
-          />
-
-          New trip
-        </button>
-
-      </header>
+      <button
+        className="map-round-button map-locate"
+        onClick={recenter}
+      >
+        <LocateFixed
+          size={23}
+        />
+      </button>
 
 
-      {/* =============================================== */}
       {/* LOADING */}
-      {/* =============================================== */}
 
       {loading && (
 
-        <div className="planning-overlay">
+        <div className="ai-visual-loading">
 
-          <div className="planning-card">
+          <div className="ai-loading-card">
 
-            <div className="planning-orb">
-
+            <div className="ai-loading-icon">
               <Sparkles
-                size={27}
+                size={26}
               />
-
             </div>
 
-
-            <span className="planning-label">
+            <span>
               EASYCHINA AI
             </span>
 
-
-            <h1>
-              Planning {city}
-            </h1>
-
+            <h2>
+              Building {city}
+            </h2>
 
             <p>
               {
@@ -1180,22 +1490,22 @@ function PlannerMapPage() {
                   loadingPhase
                 ]
               }
-
-              <span className="loading-dots">
-                ...
-              </span>
+              ...
             </p>
 
+            <div className="ai-loading-track">
 
-            <div className="planning-progress">
-
-              <span
+              <div
                 style={{
                   width:
                     `${
-                      ((loadingPhase +
-                        1) /
-                        loadingMessages.length) *
+                      (
+                        (
+                          loadingPhase +
+                          1
+                        ) /
+                        loadingMessages.length
+                      ) *
                       100
                     }%`,
                 }}
@@ -1206,357 +1516,430 @@ function PlannerMapPage() {
           </div>
 
         </div>
-
       )}
 
 
-      {/* =============================================== */}
       {/* ERROR */}
-      {/* =============================================== */}
 
       {!loading &&
         error && (
 
-          <div className="planner-error">
+        <div className="map-error-card">
 
-            <Sparkles
-              size={25}
-            />
+          <Sparkles
+            size={24}
+          />
 
-            <h2>
-              Couldn't build
-              this trip.
-            </h2>
+          <h2>
+            Couldn't build
+            your route
+          </h2>
 
-            <p>
-              {error}
-            </p>
+          <p>
+            {error}
+          </p>
 
-            <button
-              onClick={() =>
-                loadTrip(true)
-              }
-            >
-              Try again
-            </button>
+          <button
+            onClick={() =>
+              loadTrip(true)
+            }
+          >
+            Try again
+          </button>
 
-          </div>
+        </div>
 
-        )}
+      )}
 
 
-      {/* =============================================== */}
-      {/* ITINERARY PANEL */}
-      {/* =============================================== */}
+      {/* TRIP SHEET */}
 
       {!loading &&
+        !error &&
         trip &&
         activeDay && (
 
-          <aside className="itinerary-panel">
+        <section
+          className={
+            sheetExpanded
+              ? "trip-sheet trip-sheet-expanded"
+              : "trip-sheet"
+          }
+        >
 
-            {/* Header */}
+          <button
+            className="sheet-handle"
+            onClick={() =>
+              setSheetExpanded(
+                !sheetExpanded,
+              )
+            }
+            aria-expanded={
+              sheetExpanded
+            }
+          >
+            <span />
 
-            <div className="itinerary-header">
+            <ChevronUp
+              size={16}
+            />
+          </button>
 
-              <div className="ai-badge">
 
+          <div className="sheet-header">
+
+            <div>
+
+              <span className="sheet-ai-label">
                 <Sparkles
                   size={13}
                 />
 
-                AI PLANNED
+                {copy.aiTrip}
+              </span>
 
-              </div>
-
-
-              <h1>
+              <h2>
                 {trip.title}
-              </h1>
-
+              </h2>
 
               <p>
-                {trip.summary}
+                {trip.city}
+                {" · "}
+                {trip.days.length}
+                {` ${copy.days}`}
               </p>
 
             </div>
 
 
-            {/* Day tabs */}
+            <button
+              className="replay-mini"
+              onClick={
+                replayRoute
+              }
+            >
+              <Play
+                size={14}
+                fill="currentColor"
+              />
 
-            {trip.days.length >
-              1 && (
+              {copy.replay}
+            </button>
 
-              <div className="day-tabs">
-
-                {trip.days.map(
-                  (
-                    day,
-                    index,
-                  ) => (
-
-                    <button
-                      key={
-                        day.day
-                      }
-                      className={
-                        activeDayIndex ===
-                        index
-                          ? "day-tab day-tab-active"
-                          : "day-tab"
-                      }
-                      onClick={() =>
-                        switchDay(
-                          index,
-                        )
-                      }
-                    >
-
-                      Day {day.day}
-
-                    </button>
-
-                  ),
-                )}
-
-              </div>
-
-            )}
+          </div>
 
 
-            {/* Theme */}
+          {trip.days.length >
+            1 && (
 
-            <div className="day-theme">
-              {activeDay.theme}
-            </div>
+            <div className="sheet-day-tabs">
 
-
-            {/* Summary */}
-
-            <div className="route-summary">
-
-              <div>
-
-                <Navigation
-                  size={16}
-                />
-
-                <span>
-                  {distanceText}
-                </span>
-
-              </div>
-
-
-              <div>
-
-                <Clock3
-                  size={16}
-                />
-
-                <span>
-                  {durationText}
-                </span>
-
-              </div>
-
-
-              <div>
-
-                <MapPin
-                  size={16}
-                />
-
-                <span>
-                  {
-                    activeDay
-                      .stops
-                      .length
-                  }{" "}
-                  stops
-                </span>
-
-              </div>
-
-            </div>
-
-
-            {/* Stops */}
-
-            <div className="stop-list">
-
-              {activeDay.stops.map(
+              {trip.days.map(
                 (
-                  stop,
+                  day,
                   index,
-                ) => {
+                ) => (
 
-                  const active =
-                    selectedStopId ===
-                    stop.id;
+                <button
+                  key={
+                    day.day
+                  }
+                  className={
+                    activeDayIndex ===
+                    index
+                      ? "active"
+                      : ""
+                  }
+                  onClick={() =>
+                    switchDay(
+                      index,
+                    )
+                  }
+                >
+                  {copy.day} {day.day}
+                </button>
 
-                  return (
-
-                    <button
-                      key={
-                        stop.id
-                      }
-                      className={
-                        active
-                          ? "stop-card stop-card-active"
-                          : "stop-card"
-                      }
-                      onClick={() =>
-                        selectStop(
-                          stop,
-                        )
-                      }
-                    >
-
-                      <div className="stop-number">
-                        {index + 1}
-                      </div>
-
-
-                      <div className="stop-info">
-
-                        <div className="stop-meta">
-
-                          <span>
-                            {
-                              stop.time
-                            }
-                          </span>
-
-                          <span>
-                            {
-                              stop.duration_minutes
-                            }{" "}
-                            min
-                          </span>
-
-                        </div>
-
-
-                        <h3>
-                          {
-                            stop.name
-                          }
-                        </h3>
-
-
-                        <p>
-                          {
-                            stop.reason
-                          }
-                        </p>
-
-                      </div>
-
-                    </button>
-
-                  );
-                },
+                ),
               )}
 
             </div>
 
+          )}
 
-            {/* Regenerate */}
 
-            <button
-              className="regenerate-button"
-              onClick={
-                regenerateTrip
-              }
-            >
+          <div className="sheet-stats">
 
-              <RotateCcw
-                size={14}
+            <span>
+              <Navigation
+                size={15}
               />
 
-              Generate another route
+              {distanceText}
+            </span>
 
+            <span>
+              <Clock3
+                size={15}
+              />
+
+              {walkTimeText}
+            </span>
+
+            <span>
+              <MapPin
+                size={15}
+              />
+
+              {
+                activeDay
+                  .stops
+                  .length
+              } {copy.stops}
+            </span>
+
+          </div>
+
+
+          <div className="trip-stop-scroll">
+
+            {activeDay.stops.map(
+              (
+                stop,
+                index,
+              ) => {
+
+              const selected =
+                selectedStopId ===
+                stop.id;
+
+
+              return (
+                <button
+                  id={
+                    `trip-stop-${stop.id}`
+                  }
+                  key={
+                    stop.id
+                  }
+                  className={
+                    selected
+                      ? "timeline-stop timeline-stop-selected"
+                      : "timeline-stop"
+                  }
+                  onClick={() =>
+                    selectStop(
+                      stop,
+                    )
+                  }
+                >
+
+                  <div className="timeline-rail">
+
+                    <span>
+                      {index + 1}
+                    </span>
+
+                    {index <
+                      activeDay
+                        .stops
+                        .length -
+                        1 && (
+                      <i />
+                    )}
+
+                  </div>
+
+
+                  <div className="stop-type-icon">
+                    <MapPin
+                      size={18}
+                    />
+
+                    <span>
+                      {stop.category}
+                    </span>
+                  </div>
+
+
+                  <div className="timeline-stop-copy">
+
+                    <strong>
+                      {stop.name}
+                    </strong>
+
+                    <p>
+                      {stop.reason}
+                    </p>
+
+                    <small>
+                      {stop.time}
+                      {" · "}
+                      {
+                        stop.duration_minutes
+                      } min
+                    </small>
+
+
+                    {stop
+                      .travel_to_next_meters && (
+
+                      <span className="next-leg">
+
+                        {formatDistance(
+                          stop
+                            .travel_to_next_meters,
+                          units,
+                        )}
+
+                        {" · "}
+
+                        {formatDuration(
+                          stop
+                            .travel_to_next_seconds ||
+                            0,
+                        )}
+
+                        {` ${copy.toNext}`}
+
+                      </span>
+
+                    )}
+
+                  </div>
+
+                </button>
+              );
+            })}
+
+          </div>
+
+
+          {addStopOpen ? (
+
+          <form
+            className="add-stop-form"
+            onSubmit={addStop}
+          >
+            <MapPin size={17} />
+
+            <input
+              autoFocus
+              value={newStopName}
+              onChange={(event) =>
+                setNewStopName(
+                  event.target.value,
+                )
+              }
+              placeholder={
+                copy.placeholder
+              }
+            />
+
+            <button type="submit">
+              {copy.include}
             </button>
 
-          </aside>
+            <button
+              type="button"
+              className="cancel-add-stop"
+              onClick={() => {
+                setAddStopOpen(false);
+                setNewStopName("");
+              }}
+            >
+              {copy.cancel}
+            </button>
+          </form>
 
-        )}
+          ) : (
+
+          <div className="sheet-actions">
+
+            <button
+              className="add-stop-button"
+              onClick={() => {
+                setAddStopOpen(true);
+                setSheetExpanded(true);
+              }}
+            >
+              <Plus
+                size={17}
+              />
+
+              {copy.addStop}
+            </button>
+
+
+            <button
+              className="replan-button"
+              onClick={() => {
+                sessionStorage
+                  .removeItem(
+                    cacheKey,
+                  );
+
+                loadTrip(
+                  true,
+                );
+              }}
+            >
+              <RotateCcw
+                size={16}
+              />
+
+              {copy.replan}
+            </button>
+
+          </div>
+
+          )}
+
+          <small className="data-credit">
+            Place data © OpenStreetMap contributors
+          </small>
+
+        </section>
+
+      )}
 
     </div>
   );
 }
 
 
-// =========================================================
-// Route sampling
-// =========================================================
+/* =========================================================
+   Helpers
+   ========================================================= */
 
-function sampleRoute(
-  coordinates:
-    [number, number][],
-  maximumPoints: number,
+function formatDistance(
+  meters: number,
+  units: string,
 ) {
-  if (
-    coordinates.length <=
-    maximumPoints
-  ) {
-    return coordinates;
+  if (units === "Imperial") {
+    return `${(
+      meters / 1609.344
+    ).toFixed(1)} mi`;
   }
 
-
-  const step =
-    Math.ceil(
-      coordinates.length /
-        maximumPoints,
-    );
-
-
-  const sampled =
-    coordinates.filter(
-      (_, index) =>
-        index % step === 0,
-    );
-
-
-  const last =
-    coordinates[
-      coordinates.length - 1
-    ];
-
-
-  const finalSample =
-    sampled[
-      sampled.length - 1
-    ];
-
-
-  if (
-    finalSample[0] !== last[0] ||
-    finalSample[1] !== last[1]
-  ) {
-    sampled.push(last);
-  }
-
-
-  return sampled;
+  return `${(
+    meters / 1000
+  ).toFixed(1)} km`;
 }
 
-
-// =========================================================
-// Duration formatting
-// =========================================================
 
 function formatDuration(
   seconds: number,
 ) {
+
   const minutes =
     Math.round(
       seconds / 60,
     );
 
 
-  if (minutes < 60) {
+  if (
+    minutes < 60
+  ) {
     return `${minutes} min`;
   }
 
@@ -1571,22 +1954,16 @@ function formatDuration(
     minutes % 60;
 
 
-  if (remaining === 0) {
-    return `${hours} hr`;
-  }
-
-
-  return `${hours} hr ${remaining} min`;
+  return remaining
+    ? `${hours} hr ${remaining} min`
+    : `${hours} hr`;
 }
 
-
-// =========================================================
-// Escape AI text before inserting into Popup HTML
-// =========================================================
 
 function escapeHtml(
   value: string,
 ) {
+
   return value
     .replaceAll(
       "&",

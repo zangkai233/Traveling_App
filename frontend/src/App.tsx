@@ -6,16 +6,22 @@ import {
 
 import BottomNav from "./components/BottomNav";
 
-import HomePage from "./pages/HomePage";
 import GuidePage from "./pages/GuidePage";
+import HomePage from "./pages/HomePage";
 import PlannerMapPage from "./pages/PlannerMapPage";
 import SettingsPage from "./pages/SettingsPage";
+
 
 function App() {
   return (
     <BrowserRouter>
+
       <Routes>
-        <Route path="/" element={<HomePage />} />
+
+        <Route
+          path="/"
+          element={<HomePage />}
+        />
 
         <Route
           path="/guide"
@@ -36,11 +42,14 @@ function App() {
           path="/settings"
           element={<SettingsPage />}
         />
+
       </Routes>
 
       <BottomNav />
+
     </BrowserRouter>
   );
 }
+
 
 export default App;
