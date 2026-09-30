@@ -1,6 +1,6 @@
-cat > .gitignore <<'EOF'
 # Secrets
 backend/.env
+backend-spring/.env
 frontend/.env.local
 
 # Python
@@ -8,10 +8,19 @@ backend/.venv/
 backend/__pycache__/
 *.pyc
 
+# Java
+backend-spring/target/
+backend-spring/.classpath
+backend-spring/.project
+backend-spring/.settings/
+*.rdb
+
+# Local editor settings
+.vscode/
+
 # Node
 frontend/node_modules/
 frontend/dist/
 
 # macOS
 .DS_Store
-EOF

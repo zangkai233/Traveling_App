@@ -1,305 +1,116 @@
-# Travel App
+# EasyTravel
 
-An AI-powered travel planning web app built with React, TypeScript, FastAPI, DeepSeek, and Mapbox.
+AI-assisted city trip planning with interactive walking routes. The application combines a React map interface, a Spring Boot API for persistence and request control, and a FastAPI planner for AI and geospatial work.
 
-The current MVP focuses on generating personalized multi-stop city itineraries and visualizing them as interactive routes on a map.
+> **Project status:** local development prototype. The guide marketplace is mock content, and the API has no authentication or user-level data isolation. It is not deployed as a public service.
 
-## Features
+## What it does
 
-- AI-generated travel itineraries
-- Multi-day trip planning
-- Destination, trip length, interests, and must-visit preferences
-- Surprise Me trip generation
-- Interactive Mapbox map
-- Animated route visualization
-- Sequential stop-marker animation
-- Real walking routes between attractions
-- Mobile-first responsive UI
-- Expandable itinerary bottom sheet
-- Home, Guide, Map, and Settings navigation
-- Mock local-guide marketplace
-- Local trip caching with `sessionStorage`
-- User preferences stored with `localStorage`
-
-## Tech Stack
-
-### Frontend
-
-- React
-- TypeScript
-- Vite
-- React Router
-- Mapbox GL JS
-- Lucide React
-- CSS
-
-### Backend
-
-- Python
-- FastAPI
-- Uvicorn
-- DeepSeek API
-- Mapbox Search API
-- Mapbox Directions API
-- HTTPX
+- Generates one- to three-day itineraries from a destination, interests, pace, language, and must-visit places.
+- Resolves attractions to coordinates and draws walking routes on an interactive Mapbox map.
+- Animates stops and routes, supports day switching and replanning, and stores UI preferences in the browser.
+- Saves generated plans in MySQL and caches repeat requests in Redis for 10 minutes.
+- Coalesces simultaneous identical requests so one planner result can serve all waiting clients.
 
 ## Architecture
 
 ```text
-Browser / PWA
-     |
-     v
-React + TypeScript
-     |
-     | HTTP / JSON
-     v
-FastAPI
-     |
-     +----> DeepSeek API
-     |       Generates itinerary structure
-     |
-     +----> Mapbox Search
-     |       Resolves real places to coordinates
-     |
-     +----> Mapbox Directions
-             Builds real walking routes
+React + TypeScript + Mapbox GL JS (Vite, :5173)
+              | POST /api/plan
+              v
+Spring Boot (Java 21, :8080)
+  |           |             |
+  |           |             +--> MySQL: generated plans
+  |           +----------------> Redis: cache + per-request lock
+  +--> FastAPI (Python, :8000)
+         +--> DeepSeek: itinerary generation
+         +--> Mapbox / OpenStreetMap Nominatim: place resolution
+         +--> Mapbox Directions: walking routes
 ```
 
-DeepSeek decides what places to visit, in what order, and why.
+The browser calls Spring Boot; Spring Boot delegates new plans to FastAPI. The frontend also keeps a tab-scoped copy of a generated itinerary in session storage.
 
-Mapbox resolves real geographic locations and calculates the route between them.
+### Concurrent request behavior
 
-## Project Structure
+- A request with the same parameters checks Redis first. On a miss, one request acquires a Redis lock; other matching requests wait for its cached result.
+- **Surprise Me** bypasses this cache so each click generates a new plan.
+- Each Spring Boot instance allows up to **8 simultaneous Python planner calls**. Requests wait up to **5 seconds** for a slot, then receive HTTP **429**. Virtual threads are enabled for requests waiting on I/O.
+- The semaphore is **per Spring instance**, not a global queue. This design protects the planner from bursts; it does not guarantee that every distinct request in a large burst completes.
 
-```text
-travel-app/
-|
-|-- backend/
-|   |-- main.py
-|   |-- requirements.txt
-|   |-- .env
-|   `-- .venv/
-|
-|-- frontend/
-|   |-- public/
-|   |-- src/
-|   |   |-- components/
-|   |   |   |-- BottomNav.tsx
-|   |   |   `-- BottomNav.css
-|   |   |
-|   |   |-- pages/
-|   |   |   |-- HomePage.tsx
-|   |   |   |-- HomePage.css
-|   |   |   |-- GuidePage.tsx
-|   |   |   |-- GuidePage.css
-|   |   |   |-- PlannerMapPage.tsx
-|   |   |   |-- PlannerMapPage.css
-|   |   |   |-- SettingsPage.tsx
-|   |   |   `-- SettingsPage.css
-|   |   |
-|   |   |-- services/
-|   |   |   `-- api.ts
-|   |   |
-|   |   |-- types/
-|   |   |   `-- trip.ts
-|   |   |
-|   |   |-- App.tsx
-|   |   |-- main.tsx
-|   |   `-- index.css
-|   |
-|   |-- .env.local
-|   |-- package.json
-|   |-- package-lock.json
-|   `-- vite.config.ts
-|
-`-- .gitignore
-```
+## Stack
 
-## Requirements
+| Layer | Technology |
+| --- | --- |
+| Frontend | React, TypeScript, Vite, Mapbox GL JS |
+| API and persistence | Java 21, Spring Boot 4.1.1, Spring Data JPA, MySQL |
+| Cache and duplicate-request control | Redis, Spring Data Redis |
+| Planner | Python, FastAPI, HTTPX, DeepSeek API, Mapbox APIs, Nominatim |
 
-Install:
+## Run locally
 
-- Node.js
-- npm
-- Python 3.10+
-- A Mapbox account and public access token
-- A DeepSeek API key
+Requirements: Java 21, Maven, Node.js with npm, Python 3.10+, MySQL, and Redis. You also need a DeepSeek API key and a Mapbox token. Keep MySQL, Redis, FastAPI, and Spring Boot running while using the frontend.
 
-## Frontend Setup
+1. Create the database and start Redis. The default connection settings are MySQL at `127.0.0.1:3306` and Redis at `127.0.0.1:6379`.
 
-Go to the frontend directory:
+   ```sql
+   CREATE DATABASE IF NOT EXISTS easychina
+     CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   ```
 
-```bash
-cd frontend
-```
+   Verify Redis with `redis-cli ping`; it should return `PONG`.
 
-Install dependencies:
+2. Create `backend/.env` with your own credentials:
 
-```bash
-npm install
-```
+   ```dotenv
+   DEEPSEEK_API_KEY=your_key
+   MAPBOX_TOKEN=pk.your_public_mapbox_token
+   ```
 
-If needed, install the main packages manually:
+   Start the Python planner in terminal 1:
 
-```bash
-npm install mapbox-gl react-router-dom lucide-react
-npm install -D @types/geojson
-```
+   ```bash
+   cd backend
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   python -m uvicorn main:app --reload --port 8000
+   ```
 
-Create:
+   Check `http://127.0.0.1:8000/health` for `{"ok":true}`.
 
-```text
-frontend/.env.local
-```
+3. Start Spring Boot in terminal 2. Set your local MySQL credentials; an empty password is valid only if your local account is configured that way.
 
-Add:
+   ```bash
+   cd backend-spring
+   export MYSQL_USER=your_mysql_user
+   export MYSQL_PASSWORD=your_mysql_password
+   mvn spring-boot:run
+   ```
 
-```env
-VITE_MAPBOX_TOKEN=pk.YOUR_MAPBOX_PUBLIC_TOKEN
-```
+   Spring Boot creates the `trip_plans` table on startup. Check `http://127.0.0.1:8080/api/plans` for `[]` or existing records. If Python runs on a different port, set `PYTHON_API_URL` before starting Spring, for example `export PYTHON_API_URL=http://127.0.0.1:8001`.
 
-Do not put a DeepSeek secret key in the frontend.
+4. Create `frontend/.env.local`:
 
-Run the frontend:
+   ```dotenv
+   VITE_MAPBOX_TOKEN=pk.your_public_mapbox_token
+   VITE_API_BASE=http://127.0.0.1:8080
+   ```
 
-```bash
-npm run dev -- --host
-```
+   Start the frontend in terminal 3:
 
-Vite will show addresses similar to:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
 
-```text
-Local:   http://localhost:5173/
-Network: http://192.168.x.x:5173/
-```
+   Open the local URL printed by Vite, normally `http://localhost:5173`.
 
-The Network address can be opened from another device on the same local network.
+Never place the DeepSeek secret in the frontend. The local `.env` files, build outputs, and Redis dump files are ignored by Git.
 
-## Backend Setup
-
-Go to the backend directory:
-
-```bash
-cd backend
-```
-
-Create a virtual environment:
-
-```bash
-python3 -m venv .venv
-```
-
-Activate it on macOS/Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-Example `requirements.txt`:
-
-```text
-fastapi
-uvicorn[standard]
-httpx
-python-dotenv
-pydantic
-```
-
-Create:
-
-```text
-backend/.env
-```
-
-Add:
-
-```env
-DEEPSEEK_API_KEY=YOUR_DEEPSEEK_API_KEY
-DEEPSEEK_MODEL=deepseek-v4-flash
-MAPBOX_TOKEN=pk.YOUR_MAPBOX_PUBLIC_TOKEN
-```
-
-Start FastAPI:
-
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Test:
-
-```text
-http://localhost:8000/health
-```
-
-Expected response:
-
-```json
-{
-  "ok": true
-}
-```
-
-## Local Development
-
-Run the backend in one terminal:
-
-```bash
-cd backend
-source .venv/bin/activate
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Run the frontend in another terminal:
-
-```bash
-cd frontend
-npm run dev -- --host
-```
-
-Open:
-
-```text
-http://localhost:5173
-```
-
-## AI Planning Flow
-
-```text
-User chooses destination
-        |
-        v
-React sends POST /api/plan
-        |
-        v
-FastAPI
-        |
-        v
-DeepSeek generates itinerary
-        |
-        v
-Mapbox Search resolves POIs
-        |
-        v
-Mapbox Directions calculates route
-        |
-        v
-React renders stop-by-stop animation
-        |
-        v
-Route is drawn on the map
-```
-
-## Main API Endpoint
+## API
 
 ### `POST /api/plan`
-
-Example request:
 
 ```json
 {
@@ -308,140 +119,52 @@ Example request:
   "interests": "food, architecture, culture",
   "pace": "balanced",
   "must_visit": ["CN Tower"],
-  "surprise_me": false
+  "surprise_me": false,
+  "language": "English"
 }
 ```
 
-The backend returns:
+The response contains a trip title, summary, days, geocoded stops, and walking-route geometry. `GET /api/plans` lists the 20 most recent saved plans; `GET /api/plans/{id}` retrieves one; `DELETE /api/plans/{id}` deletes one. These history endpoints currently have **no authentication** and should not be exposed publicly as-is.
 
-- Trip title
-- Trip summary
-- Days
-- Stops
-- Suggested times
-- Visit durations
-- Reasons
-- Coordinates
-- Route geometry
-- Route distance
-- Route duration
+## Load tests
 
-## Security
+From `backend-spring/`, with the local services running:
 
-Never commit API secrets.
-
-The following files should remain ignored:
-
-```gitignore
-backend/.env
-backend/.venv/
-backend/__pycache__/
-
-frontend/.env.local
-frontend/node_modules/
-frontend/dist/
-
-.DS_Store
+```bash
+python3 tests/load_test.py --mode cache --requests 50 --concurrency 10
+python3 tests/load_test.py --mode singleflight --requests 50 --concurrency 50
 ```
 
-Only Mapbox public `pk.` tokens should be used in the browser.
+The first test warms one route then measures cached responses. The second sends 50 identical, previously uncached requests at once. Either can make one real AI/map request.
 
-Secret API keys must remain on the FastAPI backend.
+To test 1,000 **distinct** requests without API charges:
 
-If an API key is accidentally posted publicly or committed to Git, revoke it and generate a new key.
+```bash
+python3 tests/distinct_load_test.py --users 1000 --concurrency 1000
+```
 
-## Current Pages
+This script starts an isolated Spring instance and a mock planner, uses a temporary MySQL database, then cleans them up. It cycles through 20 cities and varies request preferences to avoid Redis cache hits. MySQL and Redis must already be running, and the configured MySQL user needs permission to create and drop the temporary database. The frontend and real FastAPI planner are not used for this test.
 
-### Home
+| Local test | Observed result | What it demonstrates |
+| --- | --- | --- |
+| 50 simultaneous identical fresh requests | 50 HTTP 200 in about 2.9 seconds; one new MySQL row | Redis duplicate-request coalescing |
+| 1,000 simultaneous distinct requests, mock planner taking 8 seconds | 8 HTTP 200, 992 HTTP 429; maximum 8 Python calls active | Bounded downstream concurrency and explicit overload response |
 
-- Featured destination
-- AI trip planner
-- Destination input
-- Trip length
-- Interest selection
-- Must-visit places
-- Surprise Me
-- Destination discovery cards
+These are local development observations, not production capacity claims. The 1,000-request test does **not** mean 1,000 distinct trips were generated. Supporting every request in such a burst would require a durable job queue and a client flow for checking job status.
 
-### Guide
-
-Prototype local-guide marketplace.
-
-Current guide profiles are mock data.
-
-### Map
-
-- Full-screen Mapbox map
-- AI itinerary
-- Animated stop markers
-- Animated route
-- Day switching
-- Route replay
-- Expandable itinerary sheet
-- Replan functionality
-
-### Settings
-
-- Travel pace
-- Language
-- Distance units
-- Animation preferences
-
-Preferences are currently stored locally in the browser.
-
-## Current Status
-
-This project is currently an MVP / prototype.
-
-The database and production authentication system have intentionally not been added yet.
-
-Current focus:
-
-1. Product UI and mobile experience
-2. AI itinerary generation
-3. Map visualization
-4. Route quality
-5. Guide marketplace prototype
-
-## Planned Improvements
-
-- PostgreSQL database
-- Authentication
-- Saved trips
-- User profiles
-- Real guide accounts
-- Guide booking
-- Payments
-- Hotel integration
-- Restaurant recommendations
-- Better attraction imagery
-- Add/remove/reorder itinerary stops
-- PWA installation
-- Offline trip access
-- Additional POI/search providers
-- Production deployment
-- Real-time itinerary editing
-
-## Development Philosophy
-
-The app separates AI reasoning from geographic routing:
+## Repository layout
 
 ```text
-AI:
-What should the traveler do?
-
-Map Search:
-Where exactly is each place?
-
-Routing Engine:
-How should the traveler move between them?
-
-React:
-How should the experience be presented?
+backend/                 FastAPI itinerary and geospatial pipeline
+backend-spring/          Spring Boot API, Redis control, MySQL persistence
+backend-spring/tests/    Cache and concurrency load tests
+frontend/                React interface and Mapbox visualization
 ```
 
-This keeps itinerary generation flexible while ensuring that routes and locations are based on real geographic data.
+## Current limitations
 
-## License
-
-Private project. All rights reserved.
+- No accounts, authentication, or user isolation for saved plans.
+- The guide marketplace uses mock profiles.
+- Route generation depends on external AI, map, and geocoding services.
+- Concurrency limits are per Spring instance; distinct requests beyond available capacity can receive HTTP 429.
+- Local development setup only; production deployment and monitoring are future work.
